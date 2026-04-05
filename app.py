@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Yuyu Pharma HR Intelligence", layout="wide")
+st.set_page_config(page_title="Yuyu Pharma HR Dashboard", layout="wide")
 
 # 2. 하이엔드 대시보드 스타일 CSS
 st.markdown("""
@@ -66,22 +66,23 @@ try:
     # --- [메인 대시보드 레이아웃] ---
     head_left, head_right = st.columns([3, 1])
     with head_left:
-        st.markdown(f'<p class="main-title">Yuyu Pharma HR Intelligence</p>', unsafe_allow_html=True)
-        st.markdown(f'<p class="sub-title">유유제약 전사 인원 현황 보고 | {report_year}년 {report_month}월 기준</p>', unsafe_allow_html=True)
+        # 타이틀 및 서브 타이틀 수정
+        st.markdown(f'<p class="main-title">Yuyu Pharma HR Dashboard</p>', unsafe_allow_html=True)
+        st.markdown(f'<p class="sub-title">유유제약 인원 현황 (인사교육팀) | {report_year}년 {report_month}월 기준</p>', unsafe_allow_html=True)
     with head_right:
         if os.path.exists("yuyu_logo.png"):
             st.image("yuyu_logo.png", width=180)
         st.caption(f"Data Updated: {file_date}")
 
-    # [섹션 1: 핵심 인원 지표 - 명칭 수정]
-    st.markdown('<p class="section-header">📌 핵심 인원 지표</p>', unsafe_allow_html=True)
+    # [섹션 1: 상단 지표 섹션명 수정]
+    st.markdown('<p class="section-header">📌 구분</p>', unsafe_allow_html=True)
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("재직", f"{len(active_df)}명")
     k2.metric("입사", f"{len(monthly_in)}명")
     k3.metric("퇴사", f"{len(monthly_out)}명")
     k4.metric("증감", f"{len(monthly_in) - len(monthly_out)}명")
 
-    # [섹션 2: 데이터 그리드 레이아웃 - 명칭 수정]
+    # [섹션 2: 인원 현황]
     st.markdown('<p class="section-header">📊 인원 현황</p>', unsafe_allow_html=True)
     
     col_left, col_right = st.columns([1, 1.2])
@@ -107,13 +108,12 @@ try:
             st.table(s_counts)
         
         st.write("**[직급별]**")
-        # 직급 표 버그 수정: 인덱스를 제거하고 직급이 헤더가 되도록 변환
         rank_counts = active_df['직책'].value_counts().reset_index()
         rank_counts.columns = ['직급', '명']
-        rank_t = rank_counts.set_index('직급').T # 직급을 인덱스로 잡고 행렬 전환
-        st.table(rank_t) # 이제 0, 1, 2 대신 직급명이 상단에 나옵니다.
+        rank_t = rank_counts.set_index('직급').T
+        st.table(rank_t)
 
-    # [섹션 3: 입퇴사 현황 - 명칭 수정]
+    # [섹션 3: 입퇴사 현황]
     st.markdown('<p class="section-header">📈 입퇴사 현황</p>', unsafe_allow_html=True)
     g1, g2 = st.columns(2)
 
