@@ -5,7 +5,11 @@ from datetime import datetime
 import os
 
 # 1. 페이지 설정
-st.set_page_config(page_title="Yuyu Pharma HR Dashboard", layout="wide")
+st.set_page_config(
+    page_title="유유제약 인원현황 (인사교육팀)",
+    page_icon="yuyu_logo.png", # 로고 파일을 아이콘으로 설정
+    layout="wide"
+)
 
 # 2. 하이엔드 대시보드 스타일 CSS
 st.markdown("""
