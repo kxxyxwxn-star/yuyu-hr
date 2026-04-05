@@ -2,37 +2,42 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from datetime import datetime
+import os
 
-# 1. 페이지 설정: A4 보고서 느낌을 위해 가로폭을 제한(centered)
-st.set_page_config(page_title="Yuyu Pharma 인원현황 보고서", layout="centered")
+# 1. 페이지 설정
+st.set_page_config(page_title="유유제약 인원 현황", layout="centered")
 
-# CSS 스타일: 필터 색상 파란색 변경 및 디자인 미세 조정
+# CSS 스타일: 필터 파란색 변경 및 보고서 레이아웃 최적화
 st.markdown("""
     <style>
-    /* 지표(Metric) 글자 크기 및 색상 */
-    [data-testid="stMetricValue"] { font-size: 28px; color: #004a99; font-weight: bold; }
-    [data-testid="stMetricLabel"] { font-size: 14px; color: #666; }
+    /* 메트릭 및 텍스트 스타일 */
+    [data-testid="stMetricValue"] { font-size: 24px; color: #004a99; }
+    .report-title { font-size: 30px; font-weight: bold; text-align: center; margin-bottom: 0px; }
+    .report-subtitle { font-size: 18px; text-align: center; color: #555; margin-bottom: 20px; }
     
-    /* 멀티셀렉트 필터 색상 (파란색 계열) */
-    .stMultiSelect div div div div { background-color: #e3f2fd; color: #0d47a1; border-radius: 5px; }
+    /* 사이드바 필터 색상 (파란색 계열로 강제 고정) */
+    .stMultiSelect div div div div { background-color: #007bff !important; color: white !important; }
+    div[data-baseweb="select"] > div { border-color: #007bff !important; }
     
-    /* 구분선 및 제목 간격 조절 */
-    hr { margin-top: 1rem; margin-bottom: 1rem; }
+    /* 테이블 가독성 */
+    table { width: 100%; border-collapse: collapse; }
+    th { background-color: #f0f2f6; }
     
-    /* 출력 시 버튼 등 불필요한 요소 제거 */
     @media print {
-        .no-print, .stButton, [data-testid="stExpander"] { display: none !important; }
-        .main { padding: 0 !important; }
+        .no-print { display: none !important; }
     }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. 데이터 불러오기 및 전처리
+# 2. 데이터 불러오기
 try:
-    # 엑셀 파일 읽기
-    df = pd.read_excel("test10.xlsx")
+    file_path = "test10.xlsx"
+    df = pd.read_excel(file_path)
+    
+    # 발행일: 파일의 최종 수정 날짜 자동 인식
+    mtime = os.path.getmtime(file_path)
+    file_date = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
 
-    # 엑셀 날짜 변환 함수 (숫자형 날짜 대응)
     def convert_date(date_val):
         if pd.isna(date_val) or date_val == "": return None
         try:
@@ -40,98 +45,94 @@ try:
         except:
             return pd.to_datetime(date_val)
 
-    df['입사일'] = df['입as일'].apply(convert_date) if '입as일' in df.columns else df['입사일'].apply(convert_date)
+    df['입사일'] = df['입사일'].apply(convert_date)
     df['퇴사일'] = df['퇴사일'].apply(convert_date)
 
-    # --- [사이드바: 기준월 설정 및 필터] ---
-    st.sidebar.header("📅 보고서 기준 설정")
-    # 기준 연도와 월 선택 (이 선택에 따라 '당월'이 결정됨)
-    report_year = st.sidebar.selectbox("기준 연도", options=[2024, 2025, 2026], index=2)
-    report_month = st.sidebar.slider("기준 월", 1, 12, datetime.now().month)
+    # --- [사이드바 설정] ---
+    st.sidebar.header("📅 기준연월 선택")
+    report_year = st.sidebar.selectbox("연도", options=[2024, 2025, 2026], index=2)
+    report_month = st.sidebar.slider("월", 1, 12, datetime.now().month)
     
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 상세 필터")
     selected_dept = st.sidebar.multiselect("부서 선택", options=df['부서'].unique(), default=df['부서'].unique())
     selected_type = st.sidebar.multiselect("근무구분 선택", options=df['구분'].unique(), default=df['구분'].unique())
 
-    # 데이터 필터링 로직
-    # 1. 당월 입사자: 선택한 연/월에 입사한 사람
-    monthly_in = df[(df['입사일'].dt.year == report_year) & (df['입사일'].dt.month == report_month)]
-    
-    # 2. 당월 퇴사자: 선택한 연/월에 퇴사한 사람
+    # 데이터 필터링
+    monthly_in = df[(df['입사일'].dt.year == report_year) & (df['입사일'].dt.month == report_month)].sort_values(by='입사일', ascending=True)
     monthly_out = df[(df['퇴사일'].dt.year == report_year) & (df['퇴사일'].dt.month == report_month)]
-    
-    # 3. 현재 재직자: 기준일(선택월 말일) 기준으로 입사일은 기준일 이전이고, 퇴사일은 없거나 기준일 이후인 사람
-    # (단순화를 위해 현재 파일 내 '퇴사일'이 없는 사람 중 필터링된 인원으로 표시)
     active_df = df[df['퇴사일'].isna() & (df['부서'].isin(selected_dept)) & (df['구분'].isin(selected_type))]
 
-    # --- [메인 대시보드 시작] ---
-    st.title("📑 인원현황 보고서")
-    st.subheader(f"{report_year}년 {report_month}월 기준")
-    st.caption(f"발행일: {datetime.now().strftime('%Y-%m-%d')}")
+    # --- [메인 보고서 시작] ---
+    st.markdown('<p class="report-title">유유제약 인원 현황 (인사교육팀)</p>', unsafe_allow_html=True)
+    st.markdown(f'<p class="report-subtitle">{report_year}년 {report_month}월 기준</p>', unsafe_allow_html=True)
+    st.write(f"**발행일:** {file_date}")
     st.markdown("---")
 
-    # [섹션 1: 핵심 요약 지표]
-    col1, col2, col3 = st.columns(3)
-    col1.metric("현재 재직자", f"{len(active_df)}명")
-    col2.metric("당월 입사자", f"{len(monthly_in)}명")
-    col3.metric("당월 퇴사자", f"{len(monthly_out)}명")
-    
+    # [상단 요약]
+    col_m1, col_m2, col_m3 = st.columns(3)
+    col_m1.metric("재직", f"{len(active_df)}명")
+    col_m2.metric("당월 입사자", f"{len(monthly_in)}명")
+    col_m3.metric("당월 퇴사자", f"{len(monthly_out)}명")
     st.markdown("---")
 
-    # [섹션 2: 근무구분 및 직책별 현황]
-    st.markdown("#### 📊 인력 구성 현황")
-    c1, c2 = st.columns(2)
-    with c1:
-        fig_type = px.pie(active_df, names='구분', title="근무구분별 비중", hole=0.4, height=300)
-        fig_type.update_layout(showlegend=True, margin=dict(t=30, b=0, l=0, r=0))
-        st.plotly_chart(fig_type, use_container_width=True)
-    with c2:
-        rank_data = active_df['직책'].value_counts().reset_index()
-        rank_data.columns = ['직책', '인원수']
-        fig_rank = px.bar(rank_data, x='직책', y='인원수', title="직책별 인원", height=300, color='직책')
-        fig_rank.update_layout(showlegend=False, margin=dict(t=30, b=0, l=0, r=0))
-        st.plotly_chart(fig_rank, use_container_width=True)
+    # [중단 레이아웃: 왼쪽(부서별 인원) | 오른쪽(구분, 직급, 성별)]
+    st.markdown("#### 📊 인원현황")
+    left_col, right_col = st.columns([1, 1])
 
-    # [섹션 3: 성별 및 부서별 현황]
-    c3, c4 = st.columns(2)
-    with c3:
-        fig_sex = px.pie(active_df, names='성별', title="성별 구성비", height=300, color_discrete_sequence=['#1976d2', '#ec407a'])
-        fig_sex.update_layout(margin=dict(t=30, b=0, l=0, r=0))
-        st.plotly_chart(fig_sex, use_container_width=True)
-    with c4:
-        dept_data = active_df['부서'].value_counts().reset_index()
-        dept_data.columns = ['부서', '인원수']
-        fig_dept = px.bar(dept_data, x='인원수', y='부서', orientation='h', title="부서별 인원", height=300)
-        fig_dept.update_layout(margin=dict(t=30, b=0, l=0, r=0))
-        st.plotly_chart(fig_dept, use_container_width=True)
+    with left_col:
+        st.write("**[부서별 인원]**")
+        dept_counts = active_df['부서'].value_counts().reset_index()
+        dept_counts.columns = ['부서명', '인원']
+        st.table(dept_counts) # 세로로 길게 모든 부서 표시
+
+    with right_col:
+        # 구분별 비중 (그래프 유지 혹은 숫자로 변경 가능하나 직관성을 위해 간단한 표로 제시)
+        st.write("**[구분]**")
+        type_counts = active_df['구분'].value_counts().reset_index()
+        type_counts.columns = ['항목', '명']
+        st.table(type_counts)
+
+        # 직급별 인원 (숫자로 변경)
+        st.write("**[직급]**")
+        rank_counts = active_df['직책'].value_counts().reset_index()
+        rank_counts.columns = ['직급', '명']
+        st.table(rank_counts)
+
+        # 성별 (숫자로 변경)
+        st.write("**[성별]**")
+        sex_counts = active_df['성별'].value_counts().reset_index()
+        sex_counts.columns = ['성별', '명']
+        st.table(sex_counts)
 
     st.markdown("---")
 
-    # [섹션 4: 부서별 입퇴사 현황 (HR 이슈 파악용)]
+    # [섹션: 부서별 입퇴사 변동]
     st.markdown(f"#### ⚠️ 부서별 입·퇴사 변동 ({report_month}월)")
-    
     dept_in = monthly_in['부서'].value_counts().reset_index()
     dept_in.columns = ['부서', '입사']
     dept_out = monthly_out['부서'].value_counts().reset_index()
     dept_out.columns = ['부서', '퇴사']
-    
     hr_trend = pd.merge(dept_in, dept_out, on='부서', how='outer').fillna(0)
+
     if not hr_trend.empty:
-        fig_trend = px.bar(hr_trend, x='부서', y=['입사', '퇴사'], barmode='group', 
-                           height=350, color_discrete_map={'입사': '#4caf50', '퇴사': '#f44336'})
+        fig_trend = px.bar(hr_trend, x='부서', y=['입사', '퇴사'], barmode='group', height=300,
+                           color_discrete_map={'입사': '#4caf50', '퇴사': '#f44336'})
+        # 범위 설정: 최소 0, 최대 10, 단위 1
+        fig_trend.update_layout(yaxis=dict(dtick=1, range=[0, 10]))
         st.plotly_chart(fig_trend, use_container_width=True)
     else:
-        st.write("해당 월에는 입·퇴사 변동 내역이 없습니다.")
+        st.write("변동 내역 없음")
 
     st.markdown("---")
 
-    # [섹션 5: 상세 명단]
-    st.markdown("#### 📋 상세 사원 명부 (재직자)")
-    st.table(active_df[['사원명', '부서', '직책', '성별', '입사일']].sort_values(by='입사일', ascending=False).head(30))
-
-    st.markdown("<br><p style='text-align: center; color: #999;'>위 내용은 Yuyu Pharma 사원명부 데이터를 바탕으로 자동 생성된 보고서입니다.</p>", unsafe_allow_html=True)
+    # [하단: 당월 입사자 명부]
+    st.markdown("#### 📝 당월 입사자 명부")
+    if not monthly_in.empty:
+        # 입사일순 오름차순 정렬하여 표시
+        st.table(monthly_in[['입사일', '사원명', '부서', '직책', '구분']].assign(입사일=lambda x: x['입사일'].dt.strftime('%Y-%m-%d')))
+    else:
+        st.write("해당 월에 입사자가 없습니다.")
 
 except Exception as e:
-    st.error(f"오류가 발생했습니다: {e}")
-    st.info("test10.xlsx 파일의 칼럼명이 '사원명', '구분', '부서', '직책', '성별', '입사일', '퇴사일'인지 확인해주세요.")
+    st.error(f"인사교육팀에서 업데이트하기 전입니다: 문의: 내선 364 : {e}")
