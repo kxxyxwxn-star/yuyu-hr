@@ -43,15 +43,29 @@ try:
     df['입사일'] = df['입사일'].apply(convert_date)
     df['퇴사일'] = df['퇴사일'].apply(convert_date)
 
+    # 부서 통합 로직: '임원'이 포함된 부서는 '임원'으로 변경
+    df['부서'] = df['부서'].apply(lambda x: '임원' if '임원' in str(x) else x)
+
+    # 지정된 부서 정렬 순서
+    custom_dept_order = [
+        "임원", "종병1지점", "종병2지점", "종병3지점", "종병4지점", "OEM/ODM팀", "OTC도매팀",
+        "ETC마케팅실", "ETC마케팅팀", "인사교육팀", "결산세무팀", "복지시설팀", "심사운영팀",
+        "분석연구팀", "IT혁신팀", "제제연구팀", "개발팀", "디자인팀", "OTC마케팅팀",
+        "e커머스영업마케팅팀", "IT운영팀", "제품연구실", "제제연구팀", "건기식개발팀",
+        "법무감사팀", "펫사업팀", "SCM팀", "홍보팀", "자금팀", "영업기획팀", "대외영업팀",
+        "사업개발팀", "수출팀", "공장관리팀", "생산관리팀", "물류팀", "공무팀", "생산실",
+        "연질팀", "제조팀", "포장팀", "제품기술팀", "품질보증팀", "품질관리팀"
+    ]
+
     # --- [사이드바 필터] ---
     with st.sidebar:
         st.markdown("### ⚙️ REPORT SETTING")
         report_year = st.selectbox("기준 연도", options=[2024, 2025, 2026], index=2)
         report_month = st.slider("기준 월", 1, 12, datetime.now().month)
         st.markdown("---")
-        all_depts = sorted(df['부서'].unique())
+        all_depts_in_df = sorted(df['부서'].unique())
         type_order = ["임원", "영업", "내근", "공장"] 
-        selected_dept = st.multiselect("부서 필터", options=all_depts, default=all_depts)
+        selected_dept = st.multiselect("부서 필터", options=all_depts_in_df, default=all_depts_in_df)
         selected_type = st.multiselect("구분 필터", options=type_order, default=type_order)
 
     # 데이터 필터링
@@ -83,20 +97,17 @@ try:
 
     with col_left:
         st.write("**[부서별 인원현황]**")
+        dept_counts = active_df['부서'].value_counts().reset_index()
+        dept_counts.columns = ['부서명', '현재원']
         
-        # 1. 부서별 인원 집계 및 구분 정보 병합
-        dept_info = active_df.groupby(['부서', '구분']).size().reset_index(name='현재원')
+        # 지정된 순서로 정렬 (리스트에 없는 부서는 하단으로)
+        dept_counts['부서명'] = pd.Categorical(dept_counts['부서명'], categories=custom_dept_order, ordered=True)
+        dept_display = dept_counts[dept_counts['현재원'] > 0].sort_values(by='부서명')
         
-        # 2. 정렬용 가중치 부여 (임원:0, 영업:1, 내근:2, 공장:3)
-        type_weights = {t: i for i, t in enumerate(type_order)}
-        dept_info['weight'] = dept_info['구분'].map(type_weights)
-        
-        # 3. 0명 제외 및 정렬 (구분 우선순위 -> 부서명 가나다순)
-        dept_display = (dept_info[dept_info['현재원'] > 0]
-                        .sort_values(by=['weight', '부서'])
-                        [['부서', '현재원']]) # 가중치 컬럼은 숨김
-        
-        st.table(dept_display.set_index('부서'))
+        # 부서별 합계 추가
+        dept_sum = pd.DataFrame([{'부서명': '합계', '현재원': dept_display['현재원'].sum()}])
+        dept_final = pd.concat([dept_display, dept_sum], ignore_index=True)
+        st.table(dept_final.set_index('부서명'))
 
     with col_right:
         r_top1, r_top2 = st.columns(2)
@@ -104,19 +115,28 @@ try:
             st.write("**[구분]**")
             t_counts = active_df['구분'].value_counts().reindex(type_order).fillna(0).astype(int).reset_index()
             t_counts.columns = ['항목', '명']
-            st.table(t_counts)
+            # 합계 추가
+            t_sum = pd.DataFrame([{'항목': '합계', '명': t_counts['명'].sum()}])
+            t_final = pd.concat([t_counts, t_sum], ignore_index=True)
+            st.table(t_final.set_index('항목'))
+            
         with r_top2:
             st.write("**[성별]**")
             s_counts = active_df['성별'].value_counts().reset_index()
             s_counts.columns = ['성별', '명']
-            st.table(s_counts)
+            # 합계 추가
+            s_sum = pd.DataFrame([{'성별': '합계', '명': s_counts['명'].sum()}])
+            s_final = pd.concat([s_counts, s_sum], ignore_index=True)
+            st.table(s_final.set_index('성별'))
         
         st.write("**[직급별]**")
+        # 세로형으로 변경 및 합계 추가
         rank_counts = active_df['직책'].value_counts().reset_index()
         rank_counts.columns = ['직급', '인원']
-        rank_t = rank_counts.set_index('직급').T
-        rank_t.index.name = '구분'
-        st.table(rank_t)
+        # 합계 추가
+        rank_sum = pd.DataFrame([{'직급': '합계', '인원': rank_counts['인원'].sum()}])
+        rank_final = pd.concat([rank_counts, rank_sum], ignore_index=True)
+        st.table(rank_final.set_index('직급'))
 
     # [섹션 3: 입퇴사 현황]
     st.markdown('<p class="section-header">📈 입퇴사 현황</p>', unsafe_allow_html=True)
