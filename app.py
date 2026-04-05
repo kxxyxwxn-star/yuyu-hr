@@ -21,11 +21,15 @@ st.markdown("""
         font-size: 20px; font-weight: 700; color: #1A1C1E; 
         padding-bottom: 10px; border-bottom: 2px solid #004a99; margin-top: 30px; margin-bottom: 20px;
     }
-    .stTable { background-color: white; border-radius: 10px; overflow: hidden; }
     thead tr th { background-color: #F8FAFC !important; color: #475569 !important; font-weight: 600 !important; }
     [data-testid="stMetricValue"] { font-weight: 800; color: #004a99; }
     </style>
     """, unsafe_allow_html=True)
+
+# 합계 행 스타일 함수 정의
+def highlight_total(s):
+    is_total = s.name == '합계' or (isinstance(s.name, str) and '합계' in s.name)
+    return ['background-color: #F1F5F9; font-weight: bold;' if is_total else '' for _ in s]
 
 # 3. 데이터 로드 및 처리
 try:
@@ -43,10 +47,9 @@ try:
     df['입사일'] = df['입사일'].apply(convert_date)
     df['퇴사일'] = df['퇴사일'].apply(convert_date)
 
-    # 부서 통합 로직: '임원'이 포함된 부서는 '임원'으로 변경
+    # 부서 통합 로직: '임원' 포함 시 '임원'으로 변경
     df['부서'] = df['부서'].apply(lambda x: '임원' if '임원' in str(x) else x)
 
-    # 지정된 부서 정렬 순서 (중복된 '제제연구팀' 제거 완료)
     custom_dept_order = [
         "임원", "종병1지점", "종병2지점", "종병3지점", "종병4지점", "OEM/ODM팀", "OTC도매팀",
         "ETC마케팅실", "ETC마케팅팀", "인사교육팀", "결산세무팀", "복지시설팀", "심사운영팀",
@@ -57,7 +60,6 @@ try:
         "연질팀", "제조팀", "포장팀", "제품기술팀", "품질보증팀", "품질관리팀"
     ]
 
-    # --- [사이드바 필터] ---
     with st.sidebar:
         st.markdown("### ⚙️ REPORT SETTING")
         report_year = st.selectbox("기준 연도", options=[2024, 2025, 2026], index=2)
@@ -68,12 +70,10 @@ try:
         selected_dept = st.multiselect("부서 필터", options=all_depts_in_df, default=all_depts_in_df)
         selected_type = st.multiselect("구분 필터", options=type_order, default=type_order)
 
-    # 데이터 필터링
     monthly_in = df[(df['입사일'].dt.year == report_year) & (df['입사일'].dt.month == report_month)]
     monthly_out = df[(df['퇴사일'].dt.year == report_year) & (df['퇴사일'].dt.month == report_month)]
     active_df = df[df['퇴사일'].isna() & (df['부서'].isin(selected_dept)) & (df['구분'].isin(selected_type))]
 
-    # --- [메인 대시보드 레이아웃] ---
     head_left, head_right = st.columns([3, 1])
     with head_left:
         st.markdown(f'<p class="main-title">Yuyu Pharma HR Dashboard</p>', unsafe_allow_html=True)
@@ -83,7 +83,7 @@ try:
             st.image("yuyu_logo.png", width=180)
         st.caption(f"Data Updated: {file_date}")
 
-    # [섹션 1: 구분]
+    # [섹션 1: 구분 KPI]
     st.markdown('<p class="section-header">📌 구분</p>', unsafe_allow_html=True)
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("재직", f"{len(active_df)}명")
@@ -99,22 +99,16 @@ try:
         st.write("**[부서별 인원현황]**")
         dept_counts = active_df['부서'].value_counts().reset_index()
         dept_counts.columns = ['부서명', '현재원']
-        
-        # 0명 제외 우선 수행
         dept_display = dept_counts[dept_counts['현재원'] > 0].copy()
-        
-        # 현재 데이터에 존재하는 부서만 카테고리에 추가하여 오류 방지
         existing_categories = [d for d in custom_dept_order if d in dept_display['부서명'].values]
         other_categories = [d for d in dept_display['부서명'].values if d not in custom_dept_order]
         final_categories = existing_categories + sorted(other_categories)
-        
         dept_display['부서명'] = pd.Categorical(dept_display['부서명'], categories=final_categories, ordered=True)
         dept_display = dept_display.sort_values(by='부서명')
         
-        # 합계 추가
         dept_sum = pd.DataFrame([{'부서명': '합계', '현재원': dept_display['현재원'].sum()}])
-        dept_final = pd.concat([dept_display, dept_sum], ignore_index=True)
-        st.table(dept_final.set_index('부서명'))
+        dept_final = pd.concat([dept_display, dept_sum], ignore_index=True).set_index('부서명')
+        st.table(dept_final.style.apply(highlight_total, axis=1))
 
     with col_right:
         r_top1, r_top2 = st.columns(2)
@@ -123,28 +117,27 @@ try:
             t_counts = active_df['구분'].value_counts().reindex(type_order).fillna(0).astype(int).reset_index()
             t_counts.columns = ['항목', '명']
             t_sum = pd.DataFrame([{'항목': '합계', '명': t_counts['명'].sum()}])
-            t_final = pd.concat([t_counts, t_sum], ignore_index=True)
-            st.table(t_final.set_index('항목'))
+            t_final = pd.concat([t_counts, t_sum], ignore_index=True).set_index('항목')
+            st.table(t_final.style.apply(highlight_total, axis=1))
             
         with r_top2:
             st.write("**[성별]**")
             s_counts = active_df['성별'].value_counts().reset_index()
             s_counts.columns = ['성별', '명']
             s_sum = pd.DataFrame([{'성별': '합계', '명': s_counts['명'].sum()}])
-            s_final = pd.concat([s_counts, s_sum], ignore_index=True)
-            st.table(s_final.set_index('성별'))
+            s_final = pd.concat([s_counts, s_sum], ignore_index=True).set_index('성별')
+            st.table(s_final.style.apply(highlight_total, axis=1))
         
         st.write("**[직급별]**")
         rank_counts = active_df['직책'].value_counts().reset_index()
         rank_counts.columns = ['직급', '인원']
         rank_sum = pd.DataFrame([{'직급': '합계', '인원': rank_counts['인원'].sum()}])
-        rank_final = pd.concat([rank_counts, rank_sum], ignore_index=True)
-        st.table(rank_final.set_index('직급'))
+        rank_final = pd.concat([rank_counts, rank_sum], ignore_index=True).set_index('직급')
+        st.table(rank_final.style.apply(highlight_total, axis=1))
 
     # [섹션 3: 입퇴사 현황]
     st.markdown('<p class="section-header">📈 입퇴사 현황</p>', unsafe_allow_html=True)
     g1, g2 = st.columns(2)
-
     with g1:
         d_in = monthly_in['부서'].value_counts().reset_index()
         d_in.columns = ['부서', '명']
@@ -152,7 +145,6 @@ try:
         fig_in.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
                              yaxis=dict(dtick=1), height=280, margin=dict(t=40, b=0, l=0, r=0))
         st.plotly_chart(fig_in, use_container_width=True)
-
     with g2:
         d_out = monthly_out['부서'].value_counts().reset_index()
         d_out.columns = ['부서', '명']
