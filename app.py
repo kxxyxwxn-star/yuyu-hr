@@ -5,33 +5,24 @@ from datetime import datetime
 import os
 
 # 1. 페이지 설정
-st.set_page_config(
-    page_title="유유제약 인원현황 (인사교육팀)",
-    page_icon="yuyu_logo.png", # 로고 파일을 아이콘으로 설정
-    layout="wide"
-)
+st.set_page_config(page_title="Yuyu Pharma HR Dashboard", layout="wide")
 
 # 2. 하이엔드 대시보드 스타일 CSS
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&display=swap');
     html, body, [class*="css"] { font-family: 'Pretendard', sans-serif; background-color: #F4F7F9; }
-
     [data-testid="stSidebar"] { background-color: #FFFFFF; border-right: 1px solid #E6E9EF; }
-    
     div[data-baseweb="select"] > div { border-radius: 8px; border-color: #004a99 !important; }
     span[data-baseweb="tag"] { background-color: #004a99 !important; color: white !important; border-radius: 4px; }
-
     .main-title { font-size: 32px; font-weight: 800; color: #1A1C1E; margin-bottom: 5px; }
     .sub-title { font-size: 16px; color: #64748B; margin-bottom: 25px; }
     .section-header { 
         font-size: 20px; font-weight: 700; color: #1A1C1E; 
         padding-bottom: 10px; border-bottom: 2px solid #004a99; margin-top: 30px; margin-bottom: 20px;
     }
-
     .stTable { background-color: white; border-radius: 10px; overflow: hidden; }
     thead tr th { background-color: #F8FAFC !important; color: #475569 !important; font-weight: 600 !important; }
-    
     [data-testid="stMetricValue"] { font-weight: 800; color: #004a99; }
     </style>
     """, unsafe_allow_html=True)
@@ -59,10 +50,11 @@ try:
         report_month = st.slider("기준 월", 1, 12, datetime.now().month)
         st.markdown("---")
         all_depts = sorted(df['부서'].unique())
-        all_types = ["임원", "영업", "내근", "공장"] 
+        type_order = ["임원", "영업", "내근", "공장"] 
         selected_dept = st.multiselect("부서 필터", options=all_depts, default=all_depts)
-        selected_type = st.multiselect("구분 필터", options=all_types, default=all_types)
+        selected_type = st.multiselect("구분 필터", options=type_order, default=type_order)
 
+    # 데이터 필터링
     monthly_in = df[(df['입사일'].dt.year == report_year) & (df['입사일'].dt.month == report_month)]
     monthly_out = df[(df['퇴사일'].dt.year == report_year) & (df['퇴사일'].dt.month == report_month)]
     active_df = df[df['퇴사일'].isna() & (df['부서'].isin(selected_dept)) & (df['구분'].isin(selected_type))]
@@ -77,7 +69,7 @@ try:
             st.image("yuyu_logo.png", width=180)
         st.caption(f"Data Updated: {file_date}")
 
-    # [섹션 1: 구분 (KPI)]
+    # [섹션 1: 구분]
     st.markdown('<p class="section-header">📌 구분</p>', unsafe_allow_html=True)
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("재직", f"{len(active_df)}명")
@@ -87,20 +79,29 @@ try:
 
     # [섹션 2: 인원 현황]
     st.markdown('<p class="section-header">📊 인원 현황</p>', unsafe_allow_html=True)
-    
     col_left, col_right = st.columns([1, 1.2])
 
     with col_left:
         st.write("**[부서별 인원현황]**")
-        dept_counts = active_df['부서'].value_counts().reindex(all_depts).fillna(0).astype(int).reset_index()
-        dept_counts.columns = ['부서명', '현재원']
-        st.table(dept_counts)
+        
+        # 1. 부서별 인원 집계 및 구분 정보 병합
+        dept_info = active_df.groupby(['부서', '구분']).size().reset_index(name='현재원')
+        
+        # 2. 정렬용 가중치 부여 (임원:0, 영업:1, 내근:2, 공장:3)
+        type_weights = {t: i for i, t in enumerate(type_order)}
+        dept_info['weight'] = dept_info['구분'].map(type_weights)
+        
+        # 3. 0명 제외 및 정렬 (구분 우선순위 -> 부서명 가나다순)
+        dept_display = (dept_info[dept_info['현재원'] > 0]
+                        .sort_values(by=['weight', '부서'])
+                        [['부서', '현재원']]) # 가중치 컬럼은 숨김
+        
+        st.table(dept_display.set_index('부서'))
 
     with col_right:
         r_top1, r_top2 = st.columns(2)
         with r_top1:
             st.write("**[구분]**")
-            type_order = ["임원", "영업", "내근", "공장"]
             t_counts = active_df['구분'].value_counts().reindex(type_order).fillna(0).astype(int).reset_index()
             t_counts.columns = ['항목', '명']
             st.table(t_counts)
@@ -111,11 +112,10 @@ try:
             st.table(s_counts)
         
         st.write("**[직급별]**")
-        # 직급 표 수정: 빈칸에 '구분' 넣고 '명'을 '인원'으로 변경
         rank_counts = active_df['직책'].value_counts().reset_index()
         rank_counts.columns = ['직급', '인원']
         rank_t = rank_counts.set_index('직급').T
-        rank_t.index.name = '구분' # 인덱스 이름을 '구분'으로 설정하여 빈칸 채움
+        rank_t.index.name = '구분'
         st.table(rank_t)
 
     # [섹션 3: 입퇴사 현황]
@@ -123,19 +123,19 @@ try:
     g1, g2 = st.columns(2)
 
     with g1:
-        d_in = monthly_in['부서'].value_counts().reindex(all_depts).fillna(0).reset_index()
+        d_in = monthly_in['부서'].value_counts().reset_index()
         d_in.columns = ['부서', '명']
         fig_in = px.bar(d_in, x='부서', y='명', title="➕ 입사", color_discrete_sequence=['#004a99'])
         fig_in.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
-                             yaxis=dict(dtick=1, range=[0, 10]), height=280, margin=dict(t=40, b=0, l=0, r=0))
+                             yaxis=dict(dtick=1), height=280, margin=dict(t=40, b=0, l=0, r=0))
         st.plotly_chart(fig_in, use_container_width=True)
 
     with g2:
-        d_out = monthly_out['부서'].value_counts().reindex(all_depts).fillna(0).reset_index()
+        d_out = monthly_out['부서'].value_counts().reset_index()
         d_out.columns = ['부서', '명']
         fig_out = px.bar(d_out, x='부서', y='명', title="➖ 퇴사", color_discrete_sequence=['#E11D48'])
         fig_out.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)', 
-                              yaxis=dict(dtick=1, range=[0, 10]), height=280, margin=dict(t=40, b=0, l=0, r=0))
+                              yaxis=dict(dtick=1), height=280, margin=dict(t=40, b=0, l=0, r=0))
         st.plotly_chart(fig_out, use_container_width=True)
 
     # [섹션 4: 당월 입사자 명부]
