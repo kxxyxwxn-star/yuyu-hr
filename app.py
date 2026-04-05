@@ -10,7 +10,7 @@ st.markdown("---")
 # 2. 데이터 불러오기 (보내주신 파일명 기준)
 try:
     # CSV 파일을 읽습니다 (엑셀 시리얼 날짜 대응)
-    df = pd.read_csv("test10.xlsx - Sheet1.csv")
+    df = pd.read_excel("test10.xlsx")
 
     # 엑셀 날짜 숫자(45301 등)를 실제 날짜로 바꾸는 마법
     def convert_date(date_val):
