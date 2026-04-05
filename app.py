@@ -7,7 +7,7 @@ import os
 # 1. 페이지 설정
 st.set_page_config(page_title="유유제약 인원 현황", layout="centered")
 
-# CSS 스타일: 필터 파란색 변경 및 보고서 레이아웃 최적화
+# CSS 스타일: 필터 및 디자인 수정
 st.markdown("""
     <style>
     /* 메트릭 및 텍스트 스타일 */
@@ -15,13 +15,13 @@ st.markdown("""
     .report-title { font-size: 30px; font-weight: bold; text-align: center; margin-bottom: 0px; }
     .report-subtitle { font-size: 18px; text-align: center; color: #555; margin-bottom: 20px; }
     
-    /* 사이드바 필터 색상 (파란색 계열로 강제 고정) */
+    /* 필터(MultiSelect) 박스 배경은 하얀색, 글자 및 선택된 항목은 파란색으로 변경 */
+    div[data-baseweb="select"] > div { border-color: #007bff !important; background-color: white !important; }
     .stMultiSelect div div div div { background-color: #007bff !important; color: white !important; }
-    div[data-baseweb="select"] > div { border-color: #007bff !important; }
     
-    /* 테이블 가독성 */
+    /* 테이블 스타일: 헤더만 연한 파란색 */
     table { width: 100%; border-collapse: collapse; }
-    th { background-color: #f0f2f6; }
+    th { background-color: #e3f2fd; color: #0d47a1; }
     
     @media print {
         .no-print { display: none !important; }
@@ -34,7 +34,7 @@ try:
     file_path = "test10.xlsx"
     df = pd.read_excel(file_path)
     
-    # 발행일: 파일의 최종 수정 날짜 자동 인식
+    # 발행일 자동 인식
     mtime = os.path.getmtime(file_path)
     file_date = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d')
 
@@ -55,8 +55,12 @@ try:
     
     st.sidebar.markdown("---")
     st.sidebar.header("🔍 상세 필터")
-    selected_dept = st.sidebar.multiselect("부서 선택", options=df['부서'].unique(), default=df['부서'].unique())
-    selected_type = st.sidebar.multiselect("근무구분 선택", options=df['구분'].unique(), default=df['구분'].unique())
+    # 필터 옵션 정렬
+    all_depts = sorted(df['부서'].unique())
+    all_types = ["임원", "영업", "내근", "공장"] # 요청하신 순서대로 설정
+    
+    selected_dept = st.sidebar.multiselect("부서 선택", options=all_depts, default=all_depts)
+    selected_type = st.sidebar.multiselect("근무구분 선택", options=all_types, default=all_types)
 
     # 데이터 필터링
     monthly_in = df[(df['입사일'].dt.year == report_year) & (df['입사일'].dt.month == report_month)].sort_values(by='입사일', ascending=True)
@@ -76,30 +80,31 @@ try:
     col_m3.metric("당월 퇴사자", f"{len(monthly_out)}명")
     st.markdown("---")
 
-    # [중단 레이아웃: 왼쪽(부서별 인원) | 오른쪽(구분, 직급, 성별)]
+    # [중단 레이아웃]
     st.markdown("#### 📊 인원현황")
     left_col, right_col = st.columns([1, 1])
 
     with left_col:
         st.write("**[부서별 인원]**")
-        dept_counts = active_df['부서'].value_counts().reset_index()
+        dept_counts = active_df['부서'].value_counts().reindex(all_depts).fillna(0).astype(int).reset_index()
         dept_counts.columns = ['부서명', '인원']
-        st.table(dept_counts) # 세로로 길게 모든 부서 표시
+        st.table(dept_counts)
 
     with right_col:
-        # 구분별 비중 (그래프 유지 혹은 숫자로 변경 가능하나 직관성을 위해 간단한 표로 제시)
+        # [구분] - 지정하신 순서대로 정렬 (임원, 영업, 내근, 공장)
         st.write("**[구분]**")
-        type_counts = active_df['구분'].value_counts().reset_index()
+        type_order = ["임원", "영업", "내근", "공장"]
+        type_counts = active_df['구분'].value_counts().reindex(type_order).fillna(0).astype(int).reset_index()
         type_counts.columns = ['항목', '명']
         st.table(type_counts)
 
-        # 직급별 인원 (숫자로 변경)
+        # [직급]
         st.write("**[직급]**")
         rank_counts = active_df['직책'].value_counts().reset_index()
         rank_counts.columns = ['직급', '명']
         st.table(rank_counts)
 
-        # 성별 (숫자로 변경)
+        # [성별]
         st.write("**[성별]**")
         sex_counts = active_df['성별'].value_counts().reset_index()
         sex_counts.columns = ['성별', '명']
@@ -116,9 +121,9 @@ try:
     hr_trend = pd.merge(dept_in, dept_out, on='부서', how='outer').fillna(0)
 
     if not hr_trend.empty:
+        # 그래프 막대 색상을 파란색(입사)과 빨간색(퇴사)으로 고정
         fig_trend = px.bar(hr_trend, x='부서', y=['입사', '퇴사'], barmode='group', height=300,
-                           color_discrete_map={'입사': '#4caf50', '퇴사': '#f44336'})
-        # 범위 설정: 최소 0, 최대 10, 단위 1
+                           color_discrete_map={'입사': '#1976d2', '퇴사': '#d32f2f'})
         fig_trend.update_layout(yaxis=dict(dtick=1, range=[0, 10]))
         st.plotly_chart(fig_trend, use_container_width=True)
     else:
@@ -129,10 +134,9 @@ try:
     # [하단: 당월 입사자 명부]
     st.markdown("#### 📝 당월 입사자 명부")
     if not monthly_in.empty:
-        # 입사일순 오름차순 정렬하여 표시
         st.table(monthly_in[['입사일', '사원명', '부서', '직책', '구분']].assign(입사일=lambda x: x['입사일'].dt.strftime('%Y-%m-%d')))
     else:
         st.write("해당 월에 입사자가 없습니다.")
 
 except Exception as e:
-    st.error(f"인사교육팀에서 업데이트하기 전입니다: 문의: 내선 364 : {e}")
+    st.error(f"오류 발생: {e}")
