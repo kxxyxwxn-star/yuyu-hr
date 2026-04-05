@@ -66,7 +66,6 @@ try:
     # --- [메인 대시보드 레이아웃] ---
     head_left, head_right = st.columns([3, 1])
     with head_left:
-        # 타이틀 및 서브 타이틀 수정
         st.markdown(f'<p class="main-title">Yuyu Pharma HR Dashboard</p>', unsafe_allow_html=True)
         st.markdown(f'<p class="sub-title">유유제약 인원 현황 (인사교육팀) | {report_year}년 {report_month}월 기준</p>', unsafe_allow_html=True)
     with head_right:
@@ -74,7 +73,7 @@ try:
             st.image("yuyu_logo.png", width=180)
         st.caption(f"Data Updated: {file_date}")
 
-    # [섹션 1: 상단 지표 섹션명 수정]
+    # [섹션 1: 구분 (KPI)]
     st.markdown('<p class="section-header">📌 구분</p>', unsafe_allow_html=True)
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("재직", f"{len(active_df)}명")
@@ -108,9 +107,11 @@ try:
             st.table(s_counts)
         
         st.write("**[직급별]**")
+        # 직급 표 수정: 빈칸에 '구분' 넣고 '명'을 '인원'으로 변경
         rank_counts = active_df['직책'].value_counts().reset_index()
-        rank_counts.columns = ['직급', '명']
+        rank_counts.columns = ['직급', '인원']
         rank_t = rank_counts.set_index('직급').T
+        rank_t.index.name = '구분' # 인덱스 이름을 '구분'으로 설정하여 빈칸 채움
         st.table(rank_t)
 
     # [섹션 3: 입퇴사 현황]
