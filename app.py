@@ -46,12 +46,12 @@ try:
     # 부서 통합 로직: '임원'이 포함된 부서는 '임원'으로 변경
     df['부서'] = df['부서'].apply(lambda x: '임원' if '임원' in str(x) else x)
 
-    # 지정된 부서 정렬 순서
+    # 지정된 부서 정렬 순서 (중복된 '제제연구팀' 제거 완료)
     custom_dept_order = [
         "임원", "종병1지점", "종병2지점", "종병3지점", "종병4지점", "OEM/ODM팀", "OTC도매팀",
         "ETC마케팅실", "ETC마케팅팀", "인사교육팀", "결산세무팀", "복지시설팀", "심사운영팀",
         "분석연구팀", "IT혁신팀", "제제연구팀", "개발팀", "디자인팀", "OTC마케팅팀",
-        "e커머스영업마케팅팀", "IT운영팀", "제품연구실", "제제연구팀", "건기식개발팀",
+        "e커머스영업마케팅팀", "IT운영팀", "제품연구실", "건기식개발팀",
         "법무감사팀", "펫사업팀", "SCM팀", "홍보팀", "자금팀", "영업기획팀", "대외영업팀",
         "사업개발팀", "수출팀", "공장관리팀", "생산관리팀", "물류팀", "공무팀", "생산실",
         "연질팀", "제조팀", "포장팀", "제품기술팀", "품질보증팀", "품질관리팀"
@@ -100,11 +100,18 @@ try:
         dept_counts = active_df['부서'].value_counts().reset_index()
         dept_counts.columns = ['부서명', '현재원']
         
-        # 지정된 순서로 정렬 (리스트에 없는 부서는 하단으로)
-        dept_counts['부서명'] = pd.Categorical(dept_counts['부서명'], categories=custom_dept_order, ordered=True)
-        dept_display = dept_counts[dept_counts['현재원'] > 0].sort_values(by='부서명')
+        # 0명 제외 우선 수행
+        dept_display = dept_counts[dept_counts['현재원'] > 0].copy()
         
-        # 부서별 합계 추가
+        # 현재 데이터에 존재하는 부서만 카테고리에 추가하여 오류 방지
+        existing_categories = [d for d in custom_dept_order if d in dept_display['부서명'].values]
+        other_categories = [d for d in dept_display['부서명'].values if d not in custom_dept_order]
+        final_categories = existing_categories + sorted(other_categories)
+        
+        dept_display['부서명'] = pd.Categorical(dept_display['부서명'], categories=final_categories, ordered=True)
+        dept_display = dept_display.sort_values(by='부서명')
+        
+        # 합계 추가
         dept_sum = pd.DataFrame([{'부서명': '합계', '현재원': dept_display['현재원'].sum()}])
         dept_final = pd.concat([dept_display, dept_sum], ignore_index=True)
         st.table(dept_final.set_index('부서명'))
@@ -115,7 +122,6 @@ try:
             st.write("**[구분]**")
             t_counts = active_df['구분'].value_counts().reindex(type_order).fillna(0).astype(int).reset_index()
             t_counts.columns = ['항목', '명']
-            # 합계 추가
             t_sum = pd.DataFrame([{'항목': '합계', '명': t_counts['명'].sum()}])
             t_final = pd.concat([t_counts, t_sum], ignore_index=True)
             st.table(t_final.set_index('항목'))
@@ -124,16 +130,13 @@ try:
             st.write("**[성별]**")
             s_counts = active_df['성별'].value_counts().reset_index()
             s_counts.columns = ['성별', '명']
-            # 합계 추가
             s_sum = pd.DataFrame([{'성별': '합계', '명': s_counts['명'].sum()}])
             s_final = pd.concat([s_counts, s_sum], ignore_index=True)
             st.table(s_final.set_index('성별'))
         
         st.write("**[직급별]**")
-        # 세로형으로 변경 및 합계 추가
         rank_counts = active_df['직책'].value_counts().reset_index()
         rank_counts.columns = ['직급', '인원']
-        # 합계 추가
         rank_sum = pd.DataFrame([{'직급': '합계', '인원': rank_counts['인원'].sum()}])
         rank_final = pd.concat([rank_counts, rank_sum], ignore_index=True)
         st.table(rank_final.set_index('직급'))
