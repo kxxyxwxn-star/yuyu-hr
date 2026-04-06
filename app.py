@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 from datetime import datetime
 import os
+import re
 
 # 1. 페이지 설정
 st.set_page_config(page_title="Yuyu Pharma HR Dashboard", layout="wide")
@@ -26,11 +27,9 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 합계 행 볼드 및 배경색 스타일 함수 (안전한 인덱스 기반)
+# 합계 행 스타일 함수
 def style_total_row(df):
-    # 기본 스타일 (빈 문자열) 생성
     style_df = pd.DataFrame('', index=df.index, columns=df.columns)
-    # 인덱스 이름에 '합계'가 포함된 행만 스타일 지정
     for i, idx in enumerate(df.index):
         if "합계" in str(idx):
             style_df.iloc[i, :] = 'background-color: #F1F5F9; font-weight: bold;'
@@ -52,12 +51,22 @@ try:
     df['입사일'] = df['입사일'].apply(convert_date)
     df['퇴사일'] = df['퇴사일'].apply(convert_date)
 
-    # [직급 통합] 명칭 변경
-    rank_map = {
-        '명예회장': '임원', '대표이사': '임원', '본부장': '임원', '연구부소장': '임원', '공장장': '임원', '고문': '임원',
-        '미화원': '사원', '헬스키퍼': '사원', '반장': '사원', '인턴': '사원'
-    }
-    df['직책'] = df['직책'].replace(rank_map)
+    # [핵심: 직급 세정 및 통합 로직]
+    def map_rank(rank):
+        rank = str(rank).strip()
+        # 괄호 및 내부 내용 제거 (예: 팀원 (인사팀) -> 팀원)
+        rank = re.sub(r'\(.*\)', '', rank).strip()
+        
+        # 1. 임원 그룹화
+        if any(ex in rank for ex in ['명예회장', '대표이사', '본부장', '연구부소장', '공장장', '고문', '전무', '상무', '이사']):
+            return '임원'
+        # 2. 사원 그룹화
+        if any(em in rank for em in ['미화원', '헬스키퍼', '반장', '인턴', '팀원', '사원']):
+            return '사원'
+        # 3. 기타 명칭 그대로 유지 (지점장, 실장, 팀장, 매니저, 대리, 주임 등)
+        return rank
+
+    df['직책'] = df['직책'].apply(map_rank)
     df['부서'] = df['부서'].apply(lambda x: '임원' if '임원' in str(x) else x)
 
     # [정렬 순서 정의]
@@ -109,14 +118,10 @@ try:
         dept_counts = active_df['부서'].value_counts().reset_index()
         dept_counts.columns = ['부서명', '현재원']
         dept_display = dept_counts[dept_counts['현재원'] > 0].copy()
-        
-        # 정렬 처리
         final_cats = [d for d in custom_dept_order if d in dept_display['부서명'].values] + \
                      sorted([d for d in dept_display['부서명'].values if d not in custom_dept_order])
         dept_display['부서명'] = pd.Categorical(dept_display['부서명'], categories=final_cats, ordered=True)
         dept_display = dept_display.sort_values(by='부서명').set_index('부서명')
-        
-        # 중복 인덱스 제거 후 합계 추가 (에러 방지 핵심)
         dept_display = dept_display[~dept_display.index.duplicated(keep='first')]
         dept_display.loc['합계'] = dept_display['현재원'].sum()
         st.table(dept_display.style.apply(style_total_row, axis=None))
@@ -140,8 +145,9 @@ try:
         st.write("**[직급별]**")
         rank_counts = active_df['직책'].value_counts().reset_index()
         rank_counts.columns = ['직급', '인원']
+        # 설정한 10개 직급에만 해당하도록 필터링 및 카테고리 설정
         rank_counts['직급'] = pd.Categorical(rank_counts['직급'], categories=custom_rank_order, ordered=True)
-        rank_display = rank_counts.sort_values(by='직급').set_index('직급')
+        rank_display = rank_counts.sort_values(by='직급').dropna(subset=['직급']).set_index('직급')
         rank_display = rank_display[~rank_display.index.duplicated(keep='first')]
         rank_display.loc['합계'] = rank_display['인원'].sum()
         st.table(rank_display.style.apply(style_total_row, axis=None))
@@ -152,7 +158,6 @@ try:
         d_in = monthly_in['부서'].value_counts().reset_index()
         d_in.columns = ['부서', '명']
         fig_in = px.bar(d_in, x='부서', y='명', title="➕ 입사", color_discrete_sequence=['#004a99'])
-        # y축 레이블 방향 정방향(0도) 설정
         fig_in.update_layout(yaxis_title="명", yaxis=dict(dtick=1, tickangle=0), height=280)
         st.plotly_chart(fig_in, use_container_width=True)
     with g2:
