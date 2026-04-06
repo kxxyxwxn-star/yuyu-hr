@@ -51,25 +51,35 @@ try:
     df['입사일'] = df['입사일'].apply(convert_date)
     df['퇴사일'] = df['퇴사일'].apply(convert_date)
 
-    # [핵심: 직급 세정 및 통합 로직]
+    # [직급 통합 및 세분화 로직]
     def map_rank(rank):
         rank = str(rank).strip()
-        # 괄호 및 내부 내용 제거 (예: 팀원 (인사팀) -> 팀원)
-        rank = re.sub(r'\(.*\)', '', rank).strip()
         
-        # 1. 임원 그룹화
-        if any(ex in rank for ex in ['명예회장', '대표이사', '본부장', '연구부소장', '공장장', '고문', '전무', '상무', '이사']):
+        # 1. 특수 케이스: 팀원(매니저) -> 매니저
+        if '팀원' in rank and '매니저' in rank:
+            return '매니저'
+        
+        # 2. 임원 그룹화
+        if any(ex in rank for ex in ['명예회장', '대표이사', '본부장', '연구부소장', '공장장', '고문']):
             return '임원'
-        # 2. 사원 그룹화
+            
+        # 3. 사원 그룹화 (미화원, 헬스키퍼, 반장, 인턴 및 일반 팀원)
         if any(em in rank for em in ['미화원', '헬스키퍼', '반장', '인턴', '팀원', '사원']):
-            return '사원'
-        # 3. 기타 명칭 그대로 유지 (지점장, 실장, 팀장, 매니저, 대리, 주임 등)
+            # '4급사원'이나 '5급사원'은 별도로 분류하기 위해 제외
+            if '4급' not in rank and '5급' not in rank:
+                return '사원'
+        
+        # 4. 정해진 명칭은 그대로 반환 (지점장, 실장, 팀장, 대리, 주임, 4급사원, 5급사원 등)
         return rank
 
     df['직책'] = df['직책'].apply(map_rank)
     df['부서'] = df['부서'].apply(lambda x: '임원' if '임원' in str(x) else x)
 
     # [정렬 순서 정의]
+    custom_rank_order = [
+        "임원", "지점장", "실장", "팀장", "매니저", "대리", "주임", "4급사원", "5급사원", "사원"
+    ]
+    
     custom_dept_order = [
         "임원", "종병1지점", "종병2지점", "종병3지점", "종병4지점", "OEM/ODM팀", "OTC도매팀",
         "ETC마케팅실", "ETC마케팅팀", "인사교육팀", "결산세무팀", "복지시설팀", "심사운영팀",
@@ -79,7 +89,6 @@ try:
         "사업개발팀", "수출팀", "공장관리팀", "생산관리팀", "물류팀", "공무팀", "생산실",
         "연질팀", "제조팀", "포장팀", "제품기술팀", "품질보증팀", "품질관리팀"
     ]
-    custom_rank_order = ["임원", "지점장", "실장", "팀장", "매니저", "대리", "주임", "4급사원", "5급사원", "사원"]
 
     with st.sidebar:
         st.markdown("### ⚙️ REPORT SETTING")
@@ -134,7 +143,6 @@ try:
             t_counts = t_counts[~t_counts.index.duplicated(keep='first')]
             t_counts.loc['합계'] = t_counts['명'].sum()
             st.table(t_counts.style.apply(style_total_row, axis=None))
-            
         with r_top2:
             st.write("**[성별]**")
             s_counts = active_df['성별'].value_counts().to_frame(name='명')
@@ -145,7 +153,7 @@ try:
         st.write("**[직급별]**")
         rank_counts = active_df['직책'].value_counts().reset_index()
         rank_counts.columns = ['직급', '인원']
-        # 설정한 10개 직급에만 해당하도록 필터링 및 카테고리 설정
+        # 설정한 직급 순서 적용
         rank_counts['직급'] = pd.Categorical(rank_counts['직급'], categories=custom_rank_order, ordered=True)
         rank_display = rank_counts.sort_values(by='직급').dropna(subset=['직급']).set_index('직급')
         rank_display = rank_display[~rank_display.index.duplicated(keep='first')]
